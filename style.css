@@ -15,8 +15,19 @@
 .csst-panel { box-sizing: border-box; width: 100%; padding: 2px 0 6px; }
 
 /* 대제목: Custom Theme Inputs 같은 접이식 헤더 */
-.csst-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; margin: 2px 0 0; }
+.csst-tools { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 5px; margin: 2px 0 0; }
 .csst-tools .menu_button { margin: 0; padding: 2px 8px; width: auto; font-size: 0.72em; }
+/* Open All(위) / Close All(아래) 세로 배치 */
+.csst-tool-col { display: flex; flex-direction: column; gap: 5px; }
+.csst-tool-col .menu_button { text-align: center; }
+/* 설정 패널의 켜짐 상태 버튼 */
+.csst-set-reset.csst-on { color: var(--SmartThemeQuoteColor, #4a9eff); border-color: var(--SmartThemeQuoteColor, #4a9eff); }
+
+/* 모바일: 사이드 패널 버튼과 패널 숨김 */
+@media (max-width: 1000px), (hover: none) and (pointer: coarse) {
+    .csst-side-toggle { display: none !important; }
+    .csst-side { display: none !important; }
+}
 .csst-tools .menu_button.csst-on { color: var(--SmartThemeQuoteColor, #4a9eff); border-color: var(--SmartThemeQuoteColor, #4a9eff); }
 
 .csst-drawer { margin-top: 8px; }

@@ -41,11 +41,12 @@ const unesc3 = (s) => s.replace(/\*\\3\//g, '*/');
 // ── 설정 ──
 //  tpl : 레벨별 사용자 지정 제목 형식 (빈 문자열 = 기본 규칙)
 //  h3Next : H3을 헤딩 바로 다음 줄에만 적용
-const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, h3Next: false };
+//  hiRes : 아바타 썸네일 대신 원본 이미지 사용 (고화질)
+const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, h3Next: false, hiRes: false };
 
 function normCfg(c) {
     const src = c && typeof c === 'object' ? c : {};
-    const out = { tpl: {}, h3Next: !!src.h3Next };
+    const out = { tpl: {}, h3Next: !!src.h3Next, hiRes: !!src.hiRes };
     [1, 2, 3].forEach((lv) => {
         out.tpl[lv] = src.tpl && typeof src.tpl[lv] === 'string' ? src.tpl[lv].trim() : '';
     });
@@ -440,6 +441,58 @@ function buildTree(chunks) {
     let CFG = null;
     const cfg = () => CFG || (CFG = loadCfg());
 
+    // ── 고화질 아바타: /thumbnail?type=avatar|persona&file=... 주소를 원본 파일 주소로 바꿔치기 ──
+    const HR_ATTR = 'data-csst-orig';
+    function hiResUrl(src) {
+        try {
+            const u = new URL(src, location.origin);
+            if (u.pathname !== '/thumbnail') return null;
+            const type = u.searchParams.get('type');
+            const file = u.searchParams.get('file');
+            if (!file) return null;
+            if (type === 'avatar') return '/characters/' + encodeURIComponent(file);
+            if (type === 'persona') return '/User Avatars/' + encodeURIComponent(file);
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+    function hrApply(img, on) {
+        if (!(img instanceof HTMLImageElement)) return;
+        if (on) {
+            const cur = img.getAttribute('src');
+            const hi = cur ? hiResUrl(cur) : null;
+            if (hi) {
+                img.setAttribute(HR_ATTR, cur);
+                img.setAttribute('src', hi);
+            }
+        } else {
+            const orig = img.getAttribute(HR_ATTR);
+            if (orig) {
+                img.removeAttribute(HR_ATTR);
+                img.setAttribute('src', orig);
+            }
+        }
+    }
+    let hrObs = null;
+    function setHiRes(on) {
+        if (hrObs) { hrObs.disconnect(); hrObs = null; }
+        document.querySelectorAll('img').forEach((i) => hrApply(i, on));
+        if (!on) return;
+        hrObs = new MutationObserver((muts) => {
+            muts.forEach((m) => {
+                if (m.type === 'attributes') {
+                    hrApply(m.target, true);
+                } else {
+                    m.addedNodes.forEach((n) => {
+                        if (n.nodeType !== 1) return;
+                        if (n.tagName === 'IMG') hrApply(n, true);
+                        else if (n.querySelectorAll) n.querySelectorAll('img').forEach((i) => hrApply(i, true));
+                    });
+                }
+            });
+        });
+        hrObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+    }
+
     // 같은 textarea(#customCSS)를 보는 뷰(인라인 패널 / 사이드 패널)들
     const views = [];
 
@@ -751,10 +804,16 @@ function buildTree(chunks) {
                 return;
             }
 
-            // 상단 버튼: 접이식 그룹 전체 / CSS 편집창 전체 열기·닫기 (각각 버튼 하나로 토글)
+            // 상단 버튼: 접이식 그룹 / CSS 편집창 전체 열기·닫기 (열기 위, 닫기 아래로 따로 배치)
             const tools = el('div', 'csst-tools');
-            const groupBtn = el('div', 'menu_button', 'Group Open All');
-            const allBtn = el('div', 'menu_button', 'CSS Open All');
+            const groupOpenBtn = el('div', 'menu_button', 'Group Open All');
+            const groupCloseBtn = el('div', 'menu_button', 'Group Close All');
+            const cssOpenBtn = el('div', 'menu_button', 'CSS Open All');
+            const cssCloseBtn = el('div', 'menu_button', 'CSS Close All');
+            const groupCol = el('div', 'csst-tool-col');
+            const cssCol = el('div', 'csst-tool-col');
+            groupCol.append(groupOpenBtn, groupCloseBtn);
+            cssCol.append(cssOpenBtn, cssCloseBtn);
             const handleBtn = el('div', 'menu_button', 'Handle Mode');
             handleBtn.classList.toggle('csst-on', handleOn);
             handleBtn.title = '핸들을 끌어서 H1 / H2 / H3 순서 바꾸기';
@@ -765,25 +824,27 @@ function buildTree(chunks) {
                 try { localStorage.setItem(HANDLE_KEY + ns, handleOn ? '1' : '0'); } catch (e) { /* ignore */ }
             });
             updateToolBtn = () => {
-                const gOpen = groupCtl.length > 0 && groupCtl.every((c) => c.isOpen());
-                groupBtn.textContent = gOpen ? 'Group Close All' : 'Group Open All';
-                groupBtn.style.display = groupCtl.length ? '' : 'none';
-                const allOpen = editorCtl.length > 0 && editorCtl.every((c) => c.isOpen());
-                allBtn.textContent = allOpen ? 'CSS Close All' : 'CSS Open All';
-                allBtn.style.display = editorCtl.length ? '' : 'none';
+                groupCol.style.display = groupCtl.length ? '' : 'none';
+                cssCol.style.display = editorCtl.length ? '' : 'none';
                 tools.style.display = '';
             };
-            groupBtn.addEventListener('click', () => {
-                const open = !groupCtl.every((c) => c.isOpen());
-                groupCtl.forEach((c) => c.set(open));
+            groupOpenBtn.addEventListener('click', () => {
+                groupCtl.forEach((c) => c.set(true));
                 updateToolBtn();
             });
-            allBtn.addEventListener('click', () => {
-                const open = !editorCtl.every((c) => c.isOpen());
-                editorCtl.forEach((c) => c.set(open, true));
+            groupCloseBtn.addEventListener('click', () => {
+                groupCtl.forEach((c) => c.set(false));
                 updateToolBtn();
             });
-            tools.append(handleBtn, groupBtn, allBtn);
+            cssOpenBtn.addEventListener('click', () => {
+                editorCtl.forEach((c) => c.set(true, true));
+                updateToolBtn();
+            });
+            cssCloseBtn.addEventListener('click', () => {
+                editorCtl.forEach((c) => c.set(false, true));
+                updateToolBtn();
+            });
+            tools.append(handleBtn, groupCol, cssCol);
             container.appendChild(tools);
 
             // 최상위(H1 그룹 / 그룹 밖 H2) 순서 바꾸기용 목록
@@ -882,7 +943,7 @@ function buildTree(chunks) {
         const btn = el('i', 'fa-regular fa-square-check csst-switch interactable');
         btn.title = '체크박스 모드 전환';
         btn.tabIndex = 0;
-        const sideBtn = el('i', 'fa-solid fa-table-columns csst-switch interactable');
+        const sideBtn = el('i', 'fa-solid fa-table-columns csst-switch csst-side-toggle interactable');
         sideBtn.title = '오른쪽 CSS 패널 열기/닫기';
         sideBtn.tabIndex = 0;
 
@@ -1026,8 +1087,31 @@ function buildTree(chunks) {
             group.appendChild(box);
         });
 
+        // 1. 기본값으로 되돌리기 버튼
         const resetBtn = el('div', 'menu_button csst-set-reset', '기본값으로 되돌리기');
         content.appendChild(resetBtn);
+
+        // 2. 고화질 썸네일 버튼 + 오른쪽 설명 문구
+        let hrOn = c.hiRes;
+        const hrRow = el('div', 'csst-set-row');
+        hrRow.style.cssText = 'margin-top: 6px; display: flex; align-items: center; gap: 8px;';
+
+        const hrBtn = el('div', 'menu_button csst-set-reset', '고화질 썸네일');
+        hrBtn.style.margin = '0';
+        hrBtn.classList.toggle('csst-on', hrOn);
+
+        const hrDesc = el('span', 'csst-set-note', '(캐릭터 썸네일 대신 원본이미지 사용)');
+
+        hrRow.append(hrBtn, hrDesc);
+        content.appendChild(hrRow);
+
+        hrBtn.addEventListener('click', () => {
+            hrOn = !hrOn;
+            hrBtn.classList.toggle('csst-on', hrOn);
+            CFG = normCfg(Object.assign({}, CFG, { hiRes: hrOn }));
+            saveCfg(CFG);
+            setHiRes(CFG.hiRes);
+        });
 
         const showWarn = () => {
             const seen = new Map();
@@ -1047,7 +1131,7 @@ function buildTree(chunks) {
         };
 
         const apply = () => {
-            const next = { tpl: {}, h3Next: ctl.h3Next.checked };
+            const next = { tpl: {}, h3Next: ctl.h3Next.checked, hiRes: hrOn };
             [1, 2, 3].forEach((lv) => {
                 next.tpl[lv] = ctl[lv].tpl.value;
             });
@@ -1077,6 +1161,7 @@ function buildTree(chunks) {
     }
 
     jQuery(() => {
+        if (cfg().hiRes) setHiRes(true);
         let tries = 0;
         const timer = setInterval(() => {
             const a = init();
