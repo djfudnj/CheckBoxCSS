@@ -1,0 +1,11 @@
+{
+    "display_name": "Check Box CSS",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Nunca",
+    "version": "1.0.0",
+    "homePage": ""
+}
