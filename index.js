@@ -628,8 +628,8 @@ function buildTree(chunks) {
                 row.appendChild(label);
             }
 
-            // 복사 버튼은 CSS 편집(</>) 버튼의 왼쪽
-            if (o.copy) row.appendChild(makeCopyBtn(o.copy));
+            // 복사 버튼은 항상 줄의 맨 오른쪽 (</> 버튼이 없어도 위치 고정, </> 버튼은 그 왼쪽)
+            const copyBtn = o.copy ? makeCopyBtn(o.copy) : null;
 
             let area = null;
             if (o.seg) {
@@ -653,9 +653,11 @@ function buildTree(chunks) {
                 });
                 editorCtl.push({ set: setEd, isOpen: () => ed.style.display !== 'none' });
                 row.appendChild(editBtn);
+                if (copyBtn) row.appendChild(copyBtn);
                 item.append(row, ed);
                 setEd(openEditors.has(o.key), false);
             } else {
+                if (copyBtn) row.appendChild(copyBtn);
                 item.appendChild(row);
             }
             return { item, cb, area, handle };
@@ -825,7 +827,7 @@ function buildTree(chunks) {
             });
             updateToolBtn = () => {
                 groupCol.style.display = groupCtl.length ? '' : 'none';
-                cssCol.style.display = editorCtl.length ? '' : 'none';
+                cssCol.style.display = (editorCtl.length || groupCtl.length) ? '' : 'none';
                 tools.style.display = '';
             };
             groupOpenBtn.addEventListener('click', () => {
@@ -837,11 +839,13 @@ function buildTree(chunks) {
                 updateToolBtn();
             });
             cssOpenBtn.addEventListener('click', () => {
+                groupCtl.forEach((c) => c.set(true));
                 editorCtl.forEach((c) => c.set(true, true));
                 updateToolBtn();
             });
             cssCloseBtn.addEventListener('click', () => {
                 editorCtl.forEach((c) => c.set(false, true));
+                groupCtl.forEach((c) => c.set(false));
                 updateToolBtn();
             });
             tools.append(handleBtn, groupCol, cssCol);
