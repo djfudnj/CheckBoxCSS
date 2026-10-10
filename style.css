@@ -114,6 +114,9 @@ textarea.csst-edit {
     font-family: monospace; font-size: 0.8em; line-height: 1.4;
 }
 
+/* 왼쪽 배치: 위치만 반대로 (크기/모양은 JS가 Character Management 패널에서 복사) */
+.csst-side.csst-left { right: auto; left: 0; }
+
 /* Extensions 패널 설정 */
 .csst-set-help { padding: 4px 2px 8px; font-size: 0.85em; opacity: 0.8; line-height: 1.6; }
 .csst-set-group {

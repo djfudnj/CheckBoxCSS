@@ -342,6 +342,7 @@ function buildTree(chunks) {
     const MODE_KEY = 'csst_toggle_mode';
     const SIDE_KEY = 'csst_side_open';
     const SIDE_MODE_KEY = 'csst_side_check';
+    const SIDE_POS_KEY = 'csst_side_pos';
     const HANDLE_KEY = 'csst_handle_mode';
     const OPEN_KEY = 'csst_open_groups';
     const EDIT_KEY = 'csst_open_editors';
@@ -926,8 +927,11 @@ function buildTree(chunks) {
         const sideModeBtn = el('i', 'fa-regular fa-square-check csst-side-btn interactable');
         sideModeBtn.title = '체크박스 모드 / 통 CSS 창 전환';
         sideModeBtn.tabIndex = 0;
+        const sidePosBtn = el('i', 'fa-solid fa-arrow-left csst-side-btn interactable');
+        sidePosBtn.title = '패널을 왼쪽으로 이동';
+        sidePosBtn.tabIndex = 0;
         const sideTools = el('div', 'csst-side-tools');
-        sideTools.append(sideModeBtn, sideClose);
+        sideTools.append(sidePosBtn, sideModeBtn, sideClose);
         sideHead.append(el('b', '', 'CSS Sections'), sideTools);
         const sideBody = el('div', 'csst-side-body');
         // 통 CSS 창 (체크박스 모드를 끈 상태)
@@ -970,7 +974,53 @@ function buildTree(chunks) {
             try { localStorage.setItem(MODE_KEY, on ? '1' : '0'); } catch (e) { /* ignore */ }
         }
 
+        // 사이드 패널 위치/크기를 SillyTavern 기본 Character Management 패널과 맞춤
+        let sideLeft = false;
+        function syncSideGeometry() {
+            const ref = document.getElementById('right-nav-panel');
+            if (!ref) return;
+            const prev = { d: ref.style.display, v: ref.style.visibility };
+            const hidden = getComputedStyle(ref).display === 'none';
+            if (hidden) { ref.style.visibility = 'hidden'; ref.style.display = 'flex'; }
+            const cs = getComputedStyle(ref);
+            const r = ref.getBoundingClientRect();
+            const snap = {
+                width: r.width, top: r.top, height: r.height, zIndex: cs.zIndex,
+                bg: cs.backgroundColor, filter: cs.backdropFilter || cs.webkitBackdropFilter,
+                border: cs.border, shadow: cs.boxShadow, radius: cs.borderRadius,
+            };
+            if (hidden) { ref.style.display = prev.d; ref.style.visibility = prev.v; }
+            if (!snap.width || !snap.height) return;
+            side.style.width = snap.width + 'px';
+            // top/bottom은 CSS 기본값(상단바 아래 ~ 화면 맨 아래) 유지: 숨겨진 패널에서 잰 높이는 부정확함
+            side.style.maxWidth = '100vw';
+            if (snap.bg) side.style.background = snap.bg;
+            if (snap.filter && snap.filter !== 'none') {
+                side.style.backdropFilter = snap.filter;
+                side.style.webkitBackdropFilter = snap.filter;
+            }
+            if (snap.border) side.style.border = snap.border;
+            if (snap.shadow) side.style.boxShadow = snap.shadow;
+            if (snap.radius) side.style.borderRadius = snap.radius;
+            const z = parseInt(snap.zIndex, 10);
+            side.style.zIndex = String((Number.isFinite(z) ? z : 3000) + 1);
+        }
+
+        function setSidePos(left) {
+            sideLeft = left;
+            side.classList.toggle('csst-left', left);
+            sidePosBtn.className = 'fa-solid csst-side-btn interactable '
+                + (left ? 'fa-arrow-right' : 'fa-arrow-left');
+            sidePosBtn.title = left ? '패널을 오른쪽으로 이동' : '패널을 왼쪽으로 이동';
+            try { localStorage.setItem(SIDE_POS_KEY, left ? 'left' : 'right'); } catch (e) { /* ignore */ }
+        }
+
+        window.addEventListener('resize', () => {
+            if (side.style.display !== 'none') syncSideGeometry();
+        });
+
         function setSide(on) {
+            if (on) syncSideGeometry();
             side.style.display = on ? 'flex' : 'none';
             sideBtn.classList.toggle('csst-active', on);
             if (on) {
@@ -1001,6 +1051,7 @@ function buildTree(chunks) {
         bindBtn(sideBtn, () => setSide(side.style.display === 'none'));
         bindBtn(sideClose, () => setSide(false));
         bindBtn(sideModeBtn, () => setSideMode(!sideCheck));
+        bindBtn(sidePosBtn, () => setSidePos(!sideLeft));
 
         setInterval(() => {
             views.forEach((v) => v.sync());
@@ -1013,12 +1064,15 @@ function buildTree(chunks) {
         let saved = null;
         let savedSide = null;
         let savedSideMode = null;
+        let savedPos = null;
         try {
+            savedPos = localStorage.getItem(SIDE_POS_KEY);
             saved = localStorage.getItem(MODE_KEY);
             savedSide = localStorage.getItem(SIDE_KEY);
             savedSideMode = localStorage.getItem(SIDE_MODE_KEY);
         } catch (e) { /* ignore */ }
         if (saved === '1') setMode(true);
+        setSidePos(savedPos === 'left');
         setSideMode(savedSideMode !== '0');
         if (savedSide === '1') setSide(true);
 
