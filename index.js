@@ -1,8 +1,11 @@
-// Check Box CSS - SillyTavern extension (v1.0.0)
+// Check Box CSS - SillyTavern extension 
 //
 //  /*:: H1 ::*/    : 접고 펼 수 있는 그룹 (Custom Theme Inputs 같은 드로어)
 //  /*== H2 ==*/    : 체크박스로 통째로 끄고 켜는 항목
 //  /*-- H3 --*/    : H2 안의 하위 항목, 이것도 체크박스로 끄고 켬
+//  /*---*/         : 멈춤 표시. 지금 열려 있는 가장 작은 제목(H3 → H2 → H1 순)이 여기서 끝납니다.
+//                    멈춤 표시 뒤의 CSS는 어느 제목에도 속하지 않는 일반 CSS가 되고,
+//                    멈춤 표시는 끝나는 제목과 한 덩어리라서 순서를 옮길 때 같이 움직입니다.
 //  /* 그냥 주석 */  : 제목이 아니라 일반 주석으로 취급
 //
 //  - 기호(: = -)는 제목 앞뒤 양쪽에 2개 이상씩 있어야 제목으로 인식합니다.
@@ -11,35 +14,44 @@
 //      /*-------------
 //      :: 제목 ::
 //      -------------*/
-//  끄면 해당 부분이 /*[OFF] ... [OFF]*/ (H3은 /*[OFF3] ... [OFF3]*/) 로 감싸집니다.
-//  H2를 끄면 그 아래 H3도 모두 꺼진 것으로 취급됩니다.
 //
-//  [v1.0 추가]
-//  - 사이드 패널 상단 버튼으로 체크박스 모드 / 통 CSS 창 전환
-//  - H1/H2/H3 옆 복사 버튼: 해당 부분 CSS(제목 포함)를 클립보드로 복사
-//  - Handle Mode 버튼: 핸들(≡)을 끌어서 같은 단계끼리 순서 바꾸기
+//  [라디오 그룹]
+//  제목이 [1], [2] / [A], [B] 처럼 대괄호 표시로 시작하고, 같은 단계의 이웃 항목끼리 이어져 있으면
+//  체크박스 대신 동그란 라디오가 되어 그룹 안에서 하나만 선택됩니다.
+//      /*-- [1] 헤더 A --*/  /*-- [2] 헤더 B --*/  /*-- [3] 헤더 C --*/
+//  - 그룹은 "표시가 있는 이웃 항목이 끊기지 않고 이어진 구간" 입니다. (표시 없는 항목이 끼면 끊김)
+//  - 숫자 → 알파벳으로 종류가 바뀌거나 같은 표시가 다시 나오면 새 그룹이 시작됩니다.
+//  - 그룹에 항목이 1개뿐이면 그냥 체크박스입니다.
+//
+//  [설정] Extensions → Check Box CSS 에서 설정
+//  - 제목 형식 바꾸기: 예) /*++H2++*/ 라고 적으면 그 형식이 H2 규칙이 됩니다. (비워 두면 위의 기본 규칙)
+//      H1 / H2 / H3 자리에 제목이 들어갑니다. 반드시 /* ... */ 주석 형식이어야 해요.
+//  - 멈춤 표시 바꾸기: 예) /*end*/ (비워 두면 /*---*/)
+//  - 위쪽 버튼: Group Open/Close All (접이식 그룹 전체), CSS Open/Close All (CSS 편집창 전체)
 
 // ==PURE-START==
-const OFF_OPEN = '/*[OFF]';
-const OFF_CLOSE = '[OFF]*/';
-const OFF3_OPEN = '/*[OFF3]';
-const OFF3_CLOSE = '[OFF3]*/';
-
-// 꺼진 영역 안의 */ 가 주석을 조기 종료시키지 않도록 이스케이프 (중제목/소제목 서로 다른 표식)
-const esc = (s) => s.replace(/\*\//g, '*\\/');
-const unesc = (s) => s.replace(/\*\\\//g, '*/');
-const esc3 = (s) => s.replace(/\*\//g, '*\\3/');
-const unesc3 = (s) => s.replace(/\*\\3\//g, '*/');
+// 끄기: 안쪽을 건드리지 않고 "어떤 환경에서도 적용되지 않는" @media 로 감쌈 (안에 주석이 있어도 안전)
+//  H2 : @media not all /*[OFF]*/ {  ...  }/*[OFF]*/
+//  H3 : @media not all /*[OFF3]*/ { ...  }/*[OFF3]*/
+const OFF_OPEN = '@media not all /*[OFF]*/ {\n';
+const OFF_CLOSE = '\n}/*[OFF]*/';
+const OFF3_OPEN = '@media not all /*[OFF3]*/ {\n';
+const OFF3_CLOSE = '\n}/*[OFF3]*/';
+const wrapRe = (open, close) => new RegExp(
+    '^(\\s*)' + open.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&').replace(/\n/g, '\\n')
+    + '([\\s\\S]*)' + close.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&').replace(/\n/g, '\\n') + '(\\s*)$');
+const OFF_RE = wrapRe(OFF_OPEN, OFF_CLOSE);
+const OFF3_RE = wrapRe(OFF3_OPEN, OFF3_CLOSE);
 
 // ── 설정 ──
 //  tpl : 레벨별 사용자 지정 제목 형식 (빈 문자열 = 기본 규칙)
-//  h3Next : H3을 헤딩 바로 다음 줄에만 적용
+//  stop : 사용자 지정 멈춤 표시 (빈 문자열 = /*---*/)
 //  hiRes : 아바타 썸네일 대신 원본 이미지 사용 (고화질)
-const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, h3Next: false, hiRes: false };
+const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, stop: '', hiRes: false };
 
 function normCfg(c) {
     const src = c && typeof c === 'object' ? c : {};
-    const out = { tpl: {}, h3Next: !!src.h3Next, hiRes: !!src.hiRes };
+    const out = { tpl: {}, stop: typeof src.stop === 'string' ? src.stop.trim() : '', hiRes: !!src.hiRes };
     [1, 2, 3].forEach((lv) => {
         out.tpl[lv] = src.tpl && typeof src.tpl[lv] === 'string' ? src.tpl[lv].trim() : '';
     });
@@ -99,6 +111,60 @@ function headRes(cfg, lv) {
     return c ? { res: [c.re], spec: c.spec } : { res: DEFAULT_RES[lv], spec: DEFAULT_SPEC };
 }
 
+// ── 멈춤 표시 ──
+//  기본: /*---*/ (가운데 - 3개, 안쪽 공백은 있어도 없어도 됨)
+const STOP_DEFAULT_SRC = '^[ \\t]*\\/\\*[ \\t]*-{3}[ \\t]*\\*\\/[ \\t]*$';
+
+function checkStop(str) {
+    const t = (str || '').trim();
+    if (!t) return { empty: true };
+    if (!t.startsWith('/*') || !t.endsWith('*/')) {
+        return { ok: false, reason: '/* 로 시작해서 */ 로 끝나는 CSS 주석 형식이어야 해요 (예: /*---*/)' };
+    }
+    const inner = t.slice(2, -2);
+    if (inner.includes('*/') || inner.includes('/*')) {
+        return { ok: false, reason: '주석 안에 /* 나 */ 를 넣을 수 없어요' };
+    }
+    if (!inner.trim()) {
+        return { ok: false, reason: '주석 안에 구분용 기호나 글자를 넣어주세요 (예: /*---*/)' };
+    }
+    return { ok: true, text: t };
+}
+
+function stopSource(cfg) {
+    const chk = checkStop(cfg.stop);
+    return chk.ok ? '^[ \\t]*' + reEsc(chk.text) + '[ \\t]*$' : STOP_DEFAULT_SRC;
+}
+
+// text 안의 멈춤 표시들 (줄 앞 들여쓰기 포함해서 raw 로 돌려줌)
+function findStops(text, cfg) {
+    const re = new RegExp(stopSource(cfg), 'gm');
+    const out = [];
+    let m;
+    while ((m = re.exec(text))) {
+        if (m[0] === '') { re.lastIndex++; continue; }
+        out.push({ raw: m[0], start: m.index, end: m.index + m[0].length });
+    }
+    return out;
+}
+
+// region(제목 바로 뒤 ~ 다음 H1/H2 제목 직전) 안에서, 이 제목 자신을 끝내는 멈춤 표시.
+//  H3 이 열려 있는 동안 나오는 멈춤 표시는 그 H3 을 끝내는 것이므로 건너뜀.
+function findChunkStop(region, cfg) {
+    const h3 = findHeads(region, headRes(cfg, 3).res).filter((h) => !isOffTitle(h.title));
+    const stops = findStops(region, cfg).filter((st) => !h3.some((h) => st.start < h.end && st.end > h.start));
+    const ev = h3.map((h) => ({ kind: 'h', pos: h.start }))
+        .concat(stops.map((st) => ({ kind: 's', pos: st.start, stop: st })))
+        .sort((a, b) => a.pos - b.pos);
+    let open = false;
+    for (const e of ev) {
+        if (e.kind === 'h') open = true;
+        else if (open) open = false;
+        else return e.stop;
+    }
+    return null;
+}
+
 const HAS_WORD = /[\p{L}\p{N}]/u;
 
 const validTitle = (t) => !!t && !t.includes('*/') && !t.includes('/*') && HAS_WORD.test(t);
@@ -135,50 +201,48 @@ function findHeads12(text, cfg) {
     return out;
 }
 
-function mkSeg(title, raw, text) {
+// stop : 이 조각을 끝내는 멈춤 표시 raw (없으면 ''), post : 멈춤 표시 뒤에 보충한 줄바꿈
+function mkSeg(title, raw, text, stop) {
+    const st = stop || '';
     if (title !== null) {
-        const off = text.match(/^(\s*)\/\*\[OFF3\]([\s\S]*)\[OFF3\]\*\/(\s*)$/);
-        if (off) return { title, raw, enabled: false, lead: off[1], body: unesc3(off[2]), trail: off[3] };
+        const off = text.match(OFF3_RE);
+        if (off) return { title, raw, enabled: false, lead: off[1], body: off[2], trail: off[3], stop: st, post: '' };
     }
     const t = edgeSplit(text);
-    return { title, raw, enabled: true, lead: t[1], body: t[2], trail: t[3] };
-}
-
-// 헤딩 뒤 첫 내용이 있는 줄의 끝 (줄바꿈 직전)
-function nextLineEnd(s, from, limit) {
-    let p = from;
-    while (p < limit && /\s/.test(s[p])) p++;
-    if (p >= limit) return limit;
-    const i = s.indexOf('\n', p);
-    let end = i < 0 || i >= limit ? limit : i;
-    if (end > p && s[end - 1] === '\r') end--;
-    return end;
+    return { title, raw, enabled: true, lead: t[1], body: t[2], trail: t[3], stop: st, post: '' };
 }
 
 // H3 본문의 끝 (꺼진 H3 /*[OFF3]...[OFF3]*/ 는 안에 줄바꿈이 있어도 닫는 표식까지를 한 덩어리로 봄)
-function h3End(body, from, limit, cfg) {
+function h3End(body, from, limit) {
     let p = from;
     while (p < limit && /\s/.test(body[p])) p++;
     if (body.startsWith(OFF3_OPEN, p)) {
         const c = body.indexOf(OFF3_CLOSE, p + OFF3_OPEN.length);
         if (c >= 0 && c + OFF3_CLOSE.length <= limit) return c + OFF3_CLOSE.length;
     }
-    let cut = limit;
-    if (cfg.h3Next) cut = Math.min(cut, nextLineEnd(body, from, limit));
-    return cut;
+    return limit;
 }
 
-// H3으로 본문을 쪼갬. H3은 다음 제목(또는 "헤딩 바로 다음 줄만" 옵션)에서 끝나고,
-// 그 뒤 남은 부분은 제목 없는 조각으로 이어짐
+// H3으로 본문을 쪼갬. H3은 멈춤 표시 또는 다음 제목에서 끝나고,
+// 그 뒤 남은 부분은 제목 없는 조각으로 이어짐 (멈춤 표시는 끝나는 H3 조각에 붙음)
 function splitSegs(body, cfg) {
     cfg = cfg || DEFAULT_CFG;
     const marks = findHeads(body, headRes(cfg, 3).res).filter((h) => !isOffTitle(h.title));
+    const stops = findStops(body, cfg);
     const segs = [mkSeg(null, '', body.slice(0, marks.length ? marks[0].start : body.length))];
     marks.forEach((k, i) => {
         const limit = i + 1 < marks.length ? marks[i + 1].start : body.length;
-        const cut = h3End(body, k.end, limit, cfg);
-        segs.push(mkSeg(k.title, k.raw, body.slice(k.end, cut)));
-        if (cut < limit) segs.push(mkSeg(null, '', body.slice(cut, limit)));
+        const stop = stops.find((st) => st.start >= k.end && st.end <= limit);
+        let cut = h3End(body, k.end, stop ? stop.start : limit);
+        let stopRaw = '';
+        let next = cut;
+        if (stop && /^\s*$/.test(body.slice(cut, stop.start))) {
+            cut = stop.start;
+            stopRaw = stop.raw;
+            next = stop.end;
+        }
+        segs.push(mkSeg(k.title, k.raw, body.slice(k.end, cut), stopRaw));
+        if (next < limit) segs.push(mkSeg(null, '', body.slice(next, limit)));
     });
     return segs;
 }
@@ -186,20 +250,23 @@ function splitSegs(body, cfg) {
 function makeChunk(level, raw, title, body, cfg, extra) {
     let enabled = true;
     if (level === 2) {
-        const off = body.match(/^(\s*)\/\*\[OFF\]([\s\S]*)\[OFF\]\*\/(\s*)$/);
+        const off = body.match(OFF_RE);
         if (off) {
             enabled = false;
-            body = off[1] + unesc(off[2]) + off[3];
+            body = off[1] + off[2] + off[3];
         }
     }
     return Object.assign(
-        { level, raw, title, enabled, segs: splitSegs(body, cfg), gid: null, orphan: false, key: '' },
+        { level, raw, title, enabled, segs: splitSegs(body, cfg), gid: null, orphan: false, key: '', stop: '', post: '' },
         extra,
     );
 }
 
-// level 0: 첫 제목 위쪽, 1: H1, 2: H2 (각 제목은 다음 H1/H2 제목 직전까지)
-//  gid : 소속 H1 그룹 번호 (첫 H1보다 앞이면 null)
+// level 0: 첫 제목 위쪽(또는 멈춤 표시 뒤에 남은 일반 CSS = orphan), 1: H1, 2: H2
+//  (각 제목은 다음 H1/H2 제목 또는 멈춤 표시 직전까지)
+//  gid : 소속 H1 그룹 번호 (H1 밖이면 null)
+//  멈춤 표시: 지금 열려 있는 가장 작은 제목(H3 → H2 → H1)을 끝냄. H3 은 splitSegs 에서 처리하고,
+//  여기서는 H2 / H1 을 끝내는 멈춤 표시를 처리함 (그 제목 chunk 의 stop 으로 붙음)
 function parse(text, cfgIn) {
     const cfg = normCfg(cfgIn);
     const heads = findHeads12(text, cfg);
@@ -207,33 +274,56 @@ function parse(text, cfgIn) {
     const preEnd = heads.length ? heads[0].start : text.length;
     if (preEnd > 0) chunks.push(makeChunk(0, '', '', text.slice(0, preEnd), cfg));
 
+    const mkOrphan = (body, g, stopRaw) => makeChunk(0, '', '', body, cfg, { gid: g, orphan: true, stop: stopRaw || '' });
+
     let gid = null; // 현재 H1 그룹 번호
     heads.forEach((h, i) => {
         const regionEnd = i + 1 < heads.length ? heads[i + 1].start : text.length;
         if (h.level === 1) gid = i;
-        chunks.push(makeChunk(h.level, h.raw, h.title, text.slice(h.end, regionEnd), cfg, { gid }));
+        const region = text.slice(h.end, regionEnd);
+        const stop = findChunkStop(region, cfg);
+        const bodyText = stop ? region.slice(0, stop.start) : region;
+        chunks.push(makeChunk(h.level, h.raw, h.title, bodyText, cfg, { gid, stop: stop ? stop.raw : '' }));
+        if (!stop) return;
+
+        // 제목이 멈춤 표시로 끝남 → 뒤에 남은 CSS는 제목 없는 조각(orphan)
+        if (h.level === 1) gid = null; // H1 이 끝났으니 이후는 그룹 밖
+        const rem = region.slice(stop.end);
+        if (rem === '') return;
+        // H1 안에 있는 상태(H2 가 끝난 뒤)에서 또 멈춤 표시가 나오면 그건 H1 을 끝냄
+        const s2 = gid !== null ? findChunkStop(rem, cfg) : null;
+        if (s2) {
+            chunks.push(mkOrphan(rem.slice(0, s2.start), gid, s2.raw));
+            gid = null;
+            const rem2 = rem.slice(s2.end);
+            if (rem2 !== '') chunks.push(mkOrphan(rem2, null, ''));
+        } else {
+            chunks.push(mkOrphan(rem, gid, ''));
+        }
     });
     return chunks;
 }
 
 const segText = (s) => s.raw + (s.title !== null && !s.enabled
-    ? s.lead + OFF3_OPEN + esc3(s.body) + OFF3_CLOSE + s.trail
-    : s.lead + s.body + s.trail);
+    ? s.lead + OFF3_OPEN + s.body + OFF3_CLOSE + s.trail
+    : s.lead + s.body + s.trail) + s.stop + s.post;
 const segsText = (c) => c.segs.map(segText).join('');
 
+// 멈춤 표시는 @media 바깥에 둠 (꺼도 제목 범위가 그대로 유지되도록)
 function chunkText(c) {
+    const tail = c.stop + c.post;
     if (c.level === 2 && !c.enabled) {
         const t = edgeSplit(segsText(c));
-        return c.raw + t[1] + OFF_OPEN + esc(t[2]) + OFF_CLOSE + t[3];
+        return c.raw + t[1] + OFF_OPEN + t[2] + OFF_CLOSE + t[3] + tail;
     }
-    return c.raw + segsText(c);
+    return c.raw + segsText(c) + tail;
 }
 
 const build = (chunks) => chunks.map(chunkText).join('');
 
-// ── 복사용: OFF 표식 없이 제목 + 내용 그대로 ──
-const plainSeg = (s) => s.raw + s.lead + s.body + s.trail;
-const plainChunk = (c) => c.raw + c.segs.map(plainSeg).join('');
+// ── 복사용: OFF 표식 없이 제목 + 내용(+ 멈춤 표시) 그대로 ──
+const plainSeg = (s) => s.raw + s.lead + s.body + s.trail + s.stop + s.post;
+const plainChunk = (c) => c.raw + c.segs.map(plainSeg).join('') + c.stop + c.post;
 
 // ── 순서 바꾸기 ──
 // 이어 붙였을 때 제목이 줄 맨 앞에서 시작하도록, 줄바꿈 없이 끝난 조각 뒤에 줄바꿈을 보충
@@ -247,6 +337,10 @@ function fixJoins(items) {
         prev = it;
     });
 }
+
+// 줄바꿈 보충: 멈춤 표시가 있으면 그 뒤에, 없으면 본문 뒤에 붙임 (멈춤 표시 앞에 끼어들지 않도록)
+const segAddNl = (s) => { if (s.stop) s.post += '\n'; else s.trail += '\n'; };
+const chunkAddNl = (c) => { if (c.stop) c.post += '\n'; else segAddNl(c.segs[c.segs.length - 1]); };
 
 // 내용 없이 공백만 남은 "제목 없는 조각" (항목과 함께 이동시킴)
 const isBlankOrphan = (c) => c.level === 0 && c.orphan && c.segs.every((s) => s.title === null && s.body === '');
@@ -285,7 +379,7 @@ function moveChunk(list, chunk, before, gid) {
     const out = rest.slice(0, at).concat(unit, rest.slice(at));
     fixJoins(out.map((c) => ({
         text: () => chunkText(c),
-        addNl: () => { c.segs[c.segs.length - 1].trail += '\n'; },
+        addNl: () => chunkAddNl(c),
     })));
     return out;
 }
@@ -304,7 +398,7 @@ function moveSeg(chunk, seg, before) {
     const out = rest.slice(0, at).concat(unit, rest.slice(at));
     fixJoins(out.map((s) => ({
         text: () => segText(s),
-        addNl: () => { s.trail += '\n'; },
+        addNl: () => segAddNl(s),
     })));
     chunk.segs = out;
     return true;
@@ -327,6 +421,39 @@ function buildTree(chunks) {
         }
     }
     return nodes;
+}
+// ── 라디오 그룹 ──
+//  제목이 [1] / [A] / [a] 같은 표시로 시작하는 이웃 항목들이 이어져 있으면 한 그룹.
+//  표시 없는 항목이 끼거나, 종류(숫자/대문자/소문자)가 바뀌거나, 같은 표시가 다시 나오면 새 그룹.
+//  항목이 1개뿐인 그룹은 라디오로 치지 않음.
+const RADIO_RE = /^\[([0-9]{1,3}|[A-Za-z])\]/;
+
+function radioTag(title) {
+    const m = RADIO_RE.exec((title || '').trim());
+    if (!m) return null;
+    const v = m[1];
+    return { v, kind: /[0-9]/.test(v) ? 'n' : (v === v.toUpperCase() ? 'U' : 'L') };
+}
+
+// items: [{ title, ref }] (화면 순서) → Map(ref → 그룹 id 문자열)
+function radioGroups(items, prefix) {
+    const groups = [];
+    let cur = null;
+    items.forEach((it) => {
+        const t = radioTag(it.title);
+        if (!t) { cur = null; return; }
+        if (!cur || cur.kind !== t.kind || cur.seen.has(t.v)) {
+            cur = { kind: t.kind, seen: new Set(), refs: [] };
+            groups.push(cur);
+        }
+        cur.seen.add(t.v);
+        cur.refs.push(it.ref);
+    });
+    const out = new Map();
+    groups.forEach((g, i) => {
+        if (g.refs.length > 1) g.refs.forEach((r) => out.set(r, prefix + i));
+    });
+    return out;
 }
 // ==PURE-END==
 
@@ -496,6 +623,15 @@ function buildTree(chunks) {
         let editorCtl = [];
         let groupCtl = [];
         let updateToolBtn = () => {};
+        // 라디오 그룹: 그룹 id → 멤버들 [{ set(on) }], H2 → 그룹 id
+        let radioReg = new Map();
+        let chunkRadio = new Map();
+        let radioSeq = 0;
+        const radioJoin = (id, member) => {
+            if (!radioReg.has(id)) radioReg.set(id, []);
+            radioReg.get(id).push(member);
+        };
+        const radioPick = (id, member) => (radioReg.get(id) || []).forEach((m) => m.set(m === member));
         const openGroups = loadSet(OPEN_KEY + ns);
         const openEditors = loadSet(EDIT_KEY + ns);
         let handleOn = false;
@@ -613,7 +749,16 @@ function buildTree(chunks) {
                 cb = document.createElement('input');
                 cb.type = 'checkbox';
                 cb.checked = o.checked;
-                cb.addEventListener('change', () => o.onChange(cb.checked));
+                if (o.radio) {
+                    cb.classList.add('csst-radio-cb');
+                    label.classList.add('csst-radio-label');
+                    item.classList.add('csst-radio');
+                }
+                cb.addEventListener('change', () => {
+                    // 라디오: 누르면 항상 "이 항목 선택" (이미 선택된 걸 눌러도 해제되지 않고, 다른 항목은 꺼짐)
+                    if (o.radio) { cb.checked = true; o.onChange(true); return; }
+                    o.onChange(cb.checked);
+                });
                 label.append(cb, title);
                 row.appendChild(label);
             } else {
@@ -665,9 +810,11 @@ function buildTree(chunks) {
             const showMain = o.toggle || seg0.body !== '';
             if (!showMain && !rest.length) return null;
 
-            const wrap = el('div', 'csst-block');
+            const locked = chunk.level === 0 && !chunk.orphan; // 맨 위 Default 영역: 끄기 불가
+            const wrap = el('div', 'csst-block' + (o.radio ? ' csst-radio-block' : ''));
             const subs = [];
             let main = null;
+            let mainMem = null;
 
             const refresh = () => {
                 const parentOff = chunk.level === 2 && !chunk.enabled;
@@ -692,27 +839,51 @@ function buildTree(chunks) {
                     seg: (seg0.body !== '' || !rest.length) ? seg0 : null,
                     key: o.key,
                     handle: !!o.handle,
+                    radio: o.radio || null,
                     copy: o.toggle ? () => plainChunk(chunk).trim() : null,
-                    onChange: (v) => { chunk.enabled = v; refresh(); commit(); },
+                    onChange: (v) => {
+                        if (mainMem) radioPick(o.radio, mainMem); else chunk.enabled = v;
+                        refresh();
+                        commit();
+                    },
                 });
+                if (o.radio) {
+                    mainMem = { set: (on) => { chunk.enabled = on; if (main.cb) main.cb.checked = on; refresh(); } };
+                    radioJoin(o.radio, mainMem);
+                }
                 wrap.appendChild(main.item);
                 wrap.csstHandle = main.handle;
             }
             const h3List = [];
+            const subRadio = radioGroups(
+                rest.filter((sg) => sg.title !== null).map((sg) => ({ title: sg.title, ref: sg })),
+                'h3-' + (radioSeq++) + ':',
+            );
             rest.forEach((seg, i) => {
+                const rid = seg.title !== null && !locked ? (subRadio.get(seg) || null) : null;
+                let mem = null;
                 const row = seg.title !== null
                     ? makeRow({
                         title: seg.title,
-                        toggle: true,
+                        toggle: !locked,
                         checked: seg.enabled,
                         sub: !o.bare,
                         seg,
                         key: o.key + '>' + seg.title,
                         handle: true,
+                        radio: rid,
                         copy: () => plainSeg(seg).trim(),
-                        onChange: (v) => { seg.enabled = v; refresh(); commit(); },
+                        onChange: (v) => {
+                            if (mem) radioPick(rid, mem); else seg.enabled = v;
+                            refresh();
+                            commit();
+                        },
                     })
                     : makeRow({ bare: true, seg, key: o.key + '#rest' + i });
+                if (rid) {
+                    mem = { set: (on) => { seg.enabled = on; if (row.cb) row.cb.checked = on; refresh(); } };
+                    radioJoin(rid, mem);
+                }
                 subs.push({ row, seg });
                 wrap.appendChild(row.item);
                 if (row.handle) {
@@ -752,7 +923,7 @@ function buildTree(chunks) {
             children.forEach((c) => {
                 const b = c.orphan
                     ? makeOrphan(c)
-                    : makeBlock(c, { title: c.title, toggle: true, handle: true, key: c.title });
+                    : makeBlock(c, { title: c.title, toggle: true, handle: true, key: c.title, radio: chunkRadio.get(c) || null });
                 if (!b) return;
                 body.appendChild(b);
                 if (!c.orphan && b.csstHandle) {
@@ -788,6 +959,18 @@ function buildTree(chunks) {
             container.innerHTML = '';
             editorCtl = [];
             groupCtl = [];
+            radioReg = new Map();
+            chunkRadio = new Map();
+            radioSeq = 0;
+            // H2 라디오 그룹: 같은 H1 그룹(또는 그룹 밖) 안의 H2 들을 순서대로 훑어서 묶음
+            const h2ByGid = new Map();
+            chunks.forEach((c) => {
+                if (c.level !== 2) return;
+                const k = String(c.gid);
+                if (!h2ByGid.has(k)) h2ByGid.set(k, []);
+                h2ByGid.get(k).push({ title: c.title, ref: c });
+            });
+            h2ByGid.forEach((list, k) => radioGroups(list, 'h2-' + k + ':').forEach((id, c) => chunkRadio.set(c, id)));
 
             if (!chunks.some((c) => c.level > 0)) {
                 const hint = el('div', 'csst-hint');
@@ -795,6 +978,8 @@ function buildTree(chunks) {
                     + '<code>/*:: H1 ::*/</code> 접기/펼치기 그룹<br>'
                     + '<code>/*== H2 ==*/</code> 체크박스로 끄고 켜기<br>'
                     + '<code>/*-- H3 --*/</code> 하위 체크박스로 끄고 켜기<br>'
+                    + '<code>/*---*/</code> 가장 작은 제목을 여기서 끝냄<br>'
+                    + '제목을 <code>[1] 이름</code>, <code>[A] 이름</code> 처럼 쓰면 같은 그룹에서 하나만 선택돼요.<br>'
                     + '제목 형식은 Extensions → Check Box CSS 에서 수정할 수 있습니다.';
                 container.appendChild(hint);
                 return;
@@ -866,7 +1051,7 @@ function buildTree(chunks) {
                     const b = makeOrphan(n.chunk);
                     if (b) container.appendChild(b);
                 } else {
-                    const b = makeBlock(n.chunk, { title: n.chunk.title, toggle: true, handle: true, key: n.chunk.title });
+                    const b = makeBlock(n.chunk, { title: n.chunk.title, toggle: true, handle: true, key: n.chunk.title, radio: chunkRadio.get(n.chunk) || null });
                     if (b) {
                         container.appendChild(b);
                         addTop(b, b.csstHandle, n.chunk);
@@ -948,14 +1133,24 @@ function buildTree(chunks) {
         sideBtn.title = '오른쪽 CSS 패널 열기/닫기';
         sideBtn.tabIndex = 0;
 
+        // 전체 Custom CSS 복사 (인라인 헤더용 / 사이드 패널용)
+        const allCopy = makeCopyBtn(() => ta.value);
+        allCopy.classList.add('csst-all');
+        allCopy.title = 'Copy all CSS';
+        const sideCopy = makeCopyBtn(() => ta.value);
+        sideCopy.classList.add('csst-all');
+        sideCopy.title = 'Copy all CSS';
+        sideTools.insertBefore(sideCopy, sideClose);
+
         const maxBtn = document.querySelector(`.editor_maximize[data-for="${TEXTAREA_ID}"]`);
         if (maxBtn) {
             maxBtn.parentElement.classList.add('csst-head');
             maxBtn.insertAdjacentElement('afterend', btn);
             btn.insertAdjacentElement('afterend', sideBtn);
+            sideBtn.insertAdjacentElement('afterend', allCopy);
         } else {
             const bar = el('div', 'csst-bar');
-            bar.append(btn, sideBtn);
+            bar.append(btn, sideBtn, allCopy);
             ta.insertAdjacentElement('beforebegin', bar);
         }
 
@@ -1084,6 +1279,7 @@ function buildTree(chunks) {
             2: { name: 'H2 · 체크박스 항목', sample: '/*== H2 ==*/' },
             3: { name: 'H3 · 하위 체크박스', sample: '/*-- H3 --*/' },
         };
+        const STOP_SAMPLE = '/*---*/';
 
         const root = el('div', 'csst-set');
         root.id = 'csst_settings';
@@ -1096,7 +1292,8 @@ function buildTree(chunks) {
 
         const help = el('div', 'csst-set-help');
         help.innerHTML = '<b>Heading Format</b>: 비워 두면 기본 규칙을 사용합니다.<br>'
-           + '<code>/* ... */</code> 주석 형식과 H1, H2, H3 플레이스 홀더를 통해 직접 규칙을 설정할 수 있습니다.';
+           + '<code>/* ... */</code> 주석 형식과 H1, H2, H3 플레이스 홀더를 통해 직접 규칙을 설정할 수 있습니다.<br>'
+           + '<b>Stop Marker</b>: 제목을 끝내는 표시도 직접 정할 수 있어요. (기본 <code>/*---*/</code>)';
         content.appendChild(help);
 
         // 얇은 선 박스 하나 안에 H1 / H2 / H3 를 수평선으로 나눠서 배치
@@ -1122,21 +1319,27 @@ function buildTree(chunks) {
 
             box.append(r1, warn);
 
-            if (lv === 3) {
-                const r3 = el('div', 'csst-set-row');
-                const label = el('label', 'checkbox_label');
-                const chk = document.createElement('input');
-                chk.type = 'checkbox';
-                chk.checked = c.h3Next;
-                label.append(chk, el('span', '', '헤딩 바로 다음 줄만 적용 (한 줄짜리 규칙용)'));
-                r3.appendChild(label);
-                box.appendChild(r3);
-                ctl.h3Next = chk;
-            }
-
             ctl[lv] = { tpl, warn };
             group.appendChild(box);
         });
+
+        // 멈춤 표시 (별도 박스)
+        const stopGroup = el('fieldset', 'csst-set-group');
+        stopGroup.appendChild(el('legend', 'csst-set-gtitle', 'Stop Marker'));
+        const stopBox = el('div', 'csst-set-sec');
+        const sr = el('div', 'csst-set-row');
+        sr.appendChild(el('span', 'csst-set-lab', '멈춤 표시'));
+        const stopInput = el('input', 'text_pole csst-tpl');
+        stopInput.type = 'text';
+        stopInput.spellcheck = false;
+        stopInput.placeholder = STOP_SAMPLE + '  (기본값)';
+        stopInput.value = c.stop;
+        sr.appendChild(stopInput);
+        const stopWarn = el('div', 'csst-set-warn');
+        const stopNote = el('div', 'csst-set-note', '지금 열려 있는 가장 작은 제목(H3 → H2 → H1)이 여기서 끝나요. 제목을 옮기면 같이 움직여요.');
+        stopBox.append(sr, stopWarn, stopNote);
+        stopGroup.appendChild(stopBox);
+        content.appendChild(stopGroup);
 
         // 1. 기본값으로 되돌리기 버튼
         const resetBtn = el('div', 'menu_button csst-set-reset', '기본값으로 되돌리기');
@@ -1179,10 +1382,14 @@ function buildTree(chunks) {
                 ctl[lv].warn.textContent = msg;
                 ctl[lv].warn.style.display = msg ? '' : 'none';
             });
+            const sc = checkStop(CFG.stop);
+            const smsg = sc.ok === false ? '⚠ ' + sc.reason + ' → 지금은 기본값(' + STOP_SAMPLE + ')을 쓰고 있어요' : '';
+            stopWarn.textContent = smsg;
+            stopWarn.style.display = smsg ? '' : 'none';
         };
 
         const apply = () => {
-            const next = { tpl: {}, h3Next: ctl.h3Next.checked, hiRes: hrOn };
+            const next = { tpl: {}, stop: stopInput.value, hiRes: hrOn };
             [1, 2, 3].forEach((lv) => {
                 next.tpl[lv] = ctl[lv].tpl.value;
             });
@@ -1197,12 +1404,12 @@ function buildTree(chunks) {
         [1, 2, 3].forEach((lv) => {
             ctl[lv].tpl.addEventListener('input', later);
         });
-        ctl.h3Next.addEventListener('change', apply);
+        stopInput.addEventListener('input', later);
         resetBtn.addEventListener('click', () => {
             [1, 2, 3].forEach((lv) => {
                 ctl[lv].tpl.value = DEFAULT_CFG.tpl[lv];
             });
-            ctl.h3Next.checked = DEFAULT_CFG.h3Next;
+            stopInput.value = DEFAULT_CFG.stop;
             apply();
         });
 

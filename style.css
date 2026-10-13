@@ -139,16 +139,47 @@ textarea.csst-edit {
 .csst-set-warn { color: #e6736b; font-size: 0.82em; line-height: 1.4; margin: 0 0 2px; }
 .csst-set-reset { width: auto; display: inline-block; margin: 2px 0 6px; }
 
-/* H2 / H3 구분용 얇은 선 (Quote 색, 투명도 85%) */
+/* H2 / H3 구분용 얇은 점선 (H1 제목 밑줄과 같은 색) */
 /* H2: 체크박스가 있는 블록 전체의 왼쪽에 선 */
 .csst-block:has(> .csst-item > .csst-row > .csst-label.checkbox_label) {
-    border-left: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 85%, transparent);
+    border-left: 1px dotted var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
     margin-left: 2px; padding-left: 8px;
 }
 /* H3: 들여쓰기 공백 안쪽에 선 */
 .csst-sub > .csst-row { position: relative; }
 .csst-sub > .csst-row::before {
     content: ''; position: absolute; left: -13px; top: 0; bottom: 0;
-    border-left: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 85%, transparent);
+    border-left: 1px dotted var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
     pointer-events: none;
 }
+
+/* 전체 Custom CSS 복사 버튼 (그림자 없음) - 패널 열기/닫기 버튼 옆, 사이드 패널 닫기 버튼 옆 */
+.csst-copy.csst-all.mes_button { opacity: 0.7; padding: 0; font-size: inherit; cursor: pointer; }
+.csst-copy.csst-all.mes_button:hover { opacity: 1; color: var(--SmartThemeQuoteColor, #4a9eff); }
+.csst-side-tools .csst-copy.csst-all.mes_button { padding: 4px; }
+
+/* 라디오 그룹 ([1] [2] / [A] [B] 표시가 이어진 항목들): 동그란 체크박스 + Quote 색 표시선 */
+.csst-label input.csst-radio-cb[type="checkbox"] {
+    -webkit-appearance: none; appearance: none;
+    position: relative; flex-shrink: 0; cursor: pointer;
+    width: 1.05em; height: 1.05em; min-width: 1.05em; margin: 0; padding: 0;
+    border: 1px solid var(--SmartThemeBodyColor, currentColor);
+    border-radius: 50% !important;
+    background: transparent; box-shadow: none;
+}
+.csst-label input.csst-radio-cb[type="checkbox"]::before {
+    content: '' !important; display: block !important;
+    position: absolute; inset: 2px; width: auto; height: auto; margin: 0; border: 0;
+    border-radius: 50%; clip-path: none; mask: none; font-size: 0;
+    background: var(--SmartThemeQuoteColor, #4a9eff);
+    opacity: 0; transform: scale(0.4);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.csst-label input.csst-radio-cb[type="checkbox"]::after { content: none !important; }
+.csst-label input.csst-radio-cb[type="checkbox"]:checked { border-color: var(--SmartThemeQuoteColor, #4a9eff); }
+.csst-label input.csst-radio-cb[type="checkbox"]:checked::before { opacity: 1; transform: scale(1); }
+.csst-label input.csst-radio-cb[type="checkbox"]:disabled { cursor: default; opacity: 0.5; }
+
+/* 표시선: 일반 항목은 H1 밑줄 색 점선, 라디오 그룹은 Quote 60% 점선 (모양은 위 규칙 그대로) */
+.csst-block.csst-radio-block { border-left-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 60%, transparent) !important; }
+.csst-sub.csst-radio > .csst-row::before { border-left-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 60%, transparent); }
