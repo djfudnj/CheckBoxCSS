@@ -27,6 +27,8 @@
 //  - 제목 형식 바꾸기: 예) /*++H2++*/ 라고 적으면 그 형식이 H2 규칙이 됩니다. (비워 두면 위의 기본 규칙)
 //      H1 / H2 / H3 자리에 제목이 들어갑니다. 반드시 /* ... */ 주석 형식이어야 해요.
 //  - 멈춤 표시 바꾸기: 예) /*end*/ (비워 두면 /*---*/)
+//  - 라디오 그룹: 사용 여부 스위치와 표시 형식 설정. 예) (X) 라고 적으면 (1) (2) / (A) (B) 가 표시가 됩니다.
+//      X 자리에 숫자 또는 알파벳이 들어갑니다. (비워 두면 [X])
 //  - 위쪽 버튼: Group Open/Close All (접이식 그룹 전체), CSS Open/Close All (CSS 편집창 전체)
 
 // ==PURE-START==
@@ -47,11 +49,19 @@ const OFF3_RE = wrapRe(OFF3_OPEN, OFF3_CLOSE);
 //  tpl : 레벨별 사용자 지정 제목 형식 (빈 문자열 = 기본 규칙)
 //  stop : 사용자 지정 멈춤 표시 (빈 문자열 = /*---*/)
 //  hiRes : 아바타 썸네일 대신 원본 이미지 사용 (고화질)
-const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, stop: '', hiRes: false };
+//  radio : 라디오 그룹 표시 형식 (빈 문자열 = [X])
+//  radioOn : 라디오 그룹 사용 여부
+const DEFAULT_CFG = { tpl: { 1: '', 2: '', 3: '' }, stop: '', hiRes: false, radio: '', radioOn: true };
 
 function normCfg(c) {
     const src = c && typeof c === 'object' ? c : {};
-    const out = { tpl: {}, stop: typeof src.stop === 'string' ? src.stop.trim() : '', hiRes: !!src.hiRes };
+    const out = {
+        tpl: {},
+        stop: typeof src.stop === 'string' ? src.stop.trim() : '',
+        hiRes: !!src.hiRes,
+        radio: typeof src.radio === 'string' ? src.radio.trim() : '',
+        radioOn: src.radioOn === undefined ? true : !!src.radioOn,
+    };
     [1, 2, 3].forEach((lv) => {
         out.tpl[lv] = src.tpl && typeof src.tpl[lv] === 'string' ? src.tpl[lv].trim() : '';
     });
@@ -426,21 +436,55 @@ function buildTree(chunks) {
 //  제목이 [1] / [A] / [a] 같은 표시로 시작하는 이웃 항목들이 이어져 있으면 한 그룹.
 //  표시 없는 항목이 끼거나, 종류(숫자/대문자/소문자)가 바뀌거나, 같은 표시가 다시 나오면 새 그룹.
 //  항목이 1개뿐인 그룹은 라디오로 치지 않음.
-const RADIO_RE = /^\[([0-9]{1,3}|[A-Za-z])\]/;
+const RADIO_DEFAULT = '[X]';
+const RADIO_PH = /(?<![\p{L}\p{N}])[Xx](?![\p{L}\p{N}])/u;
+const RADIO_VAL = '([0-9]{1,3}|[A-Za-z])';
 
-function radioTag(title) {
-    const m = RADIO_RE.exec((title || '').trim());
+// 라디오 표시 형식 검사. 예) (X)  → (1) (2) / (A) (B)
+function checkRadio(tpl) {
+    const t = (tpl || '').trim();
+    if (!t) return { empty: true };
+    const m = RADIO_PH.exec(t);
+    if (!m) return { ok: false, reason: 'X 자리가 필요해요 (예: [X], (X))' };
+    const pre = t.slice(0, m.index);
+    const suf = t.slice(m.index + m[0].length);
+    if (!(pre + suf).trim()) return { ok: false, reason: '앞뒤에 구분용 기호를 넣어주세요 (예: [X], (X))' };
+    return { ok: true, pre, suf };
+}
+
+const radioCache = new Map();
+function compileRadio(tpl) {
+    const key = tpl || '';
+    if (radioCache.has(key)) return radioCache.get(key);
+    const chk = checkRadio(key);
+    const pre = chk.ok ? chk.pre : '[';
+    const suf = chk.ok ? chk.suf : ']';
+    // 뒤 기호가 없으면 \"[1]이름\" 처럼 붙여 쓴 글자와 구분하기 위해 단어가 이어지는 경우는 제외
+    const re = new RegExp('^' + reEsc(pre) + RADIO_VAL + reEsc(suf) + (suf.trim() ? '' : '(?![\\p{L}\\p{N}])'), 'u');
+    radioCache.set(key, re);
+    return re;
+}
+
+// 화면에 보여줄 예시 ([X] → [1])
+function radioSample(cfg, v) {
+    const chk = checkRadio(cfg && cfg.radio);
+    return chk.ok ? chk.pre + v + chk.suf : '[' + v + ']';
+}
+
+function radioTag(title, cfg) {
+    const m = compileRadio(cfg && cfg.radio).exec((title || '').trim());
     if (!m) return null;
     const v = m[1];
     return { v, kind: /[0-9]/.test(v) ? 'n' : (v === v.toUpperCase() ? 'U' : 'L') };
 }
 
 // items: [{ title, ref }] (화면 순서) → Map(ref → 그룹 id 문자열)
-function radioGroups(items, prefix) {
+function radioGroups(items, prefix, cfg) {
     const groups = [];
+    if (cfg && cfg.radioOn === false) return new Map();
     let cur = null;
     items.forEach((it) => {
-        const t = radioTag(it.title);
+        const t = radioTag(it.title, cfg);
         if (!t) { cur = null; return; }
         if (!cur || cur.kind !== t.kind || cur.seen.has(t.v)) {
             cur = { kind: t.kind, seen: new Set(), refs: [] };
@@ -858,6 +902,7 @@ function radioGroups(items, prefix) {
             const subRadio = radioGroups(
                 rest.filter((sg) => sg.title !== null).map((sg) => ({ title: sg.title, ref: sg })),
                 'h3-' + (radioSeq++) + ':',
+                cfg(),
             );
             rest.forEach((seg, i) => {
                 const rid = seg.title !== null && !locked ? (subRadio.get(seg) || null) : null;
@@ -905,15 +950,16 @@ function radioGroups(items, prefix) {
         function makeGroup(chunk, title, children, key, movable) {
             const g = el('div', 'csst-drawer');
             const head = el('div', 'csst-drawer-head');
-            const icon = el('div', 'inline-drawer-icon fa-solid fa-circle-chevron-down down');
+            const icon = el('i', 'fa-solid fa-chevron-right csst-fold');
             const left = el('div', 'csst-drawer-left');
             const right = el('div', 'csst-drawer-right');
+            left.appendChild(icon);
             if (movable) {
                 g.csstHandle = makeHandle();
                 left.appendChild(g.csstHandle);
             }
             left.appendChild(el('b', '', title));
-            right.append(makeCopyBtn(() => [chunk, ...children].map(plainChunk).join('').trim()), icon);
+            right.append(makeCopyBtn(() => [chunk, ...children].map(plainChunk).join('').trim()));
             head.append(left, right);
             const body = el('div', 'csst-drawer-body');
 
@@ -935,10 +981,7 @@ function radioGroups(items, prefix) {
 
             const setOpen = (o) => {
                 body.style.display = o ? 'block' : 'none';
-                icon.classList.toggle('fa-circle-chevron-up', o);
-                icon.classList.toggle('up', o);
-                icon.classList.toggle('fa-circle-chevron-down', !o);
-                icon.classList.toggle('down', !o);
+                icon.classList.toggle('csst-open', o);
                 if (o) { autosizeIn(body); openGroups.add(key); } else openGroups.delete(key);
                 saveSet(OPEN_KEY + ns, openGroups);
             };
@@ -970,7 +1013,7 @@ function radioGroups(items, prefix) {
                 if (!h2ByGid.has(k)) h2ByGid.set(k, []);
                 h2ByGid.get(k).push({ title: c.title, ref: c });
             });
-            h2ByGid.forEach((list, k) => radioGroups(list, 'h2-' + k + ':').forEach((id, c) => chunkRadio.set(c, id)));
+            h2ByGid.forEach((list, k) => radioGroups(list, 'h2-' + k + ':', cfg()).forEach((id, c) => chunkRadio.set(c, id)));
 
             if (!chunks.some((c) => c.level > 0)) {
                 const hint = el('div', 'csst-hint');
@@ -979,7 +1022,7 @@ function radioGroups(items, prefix) {
                     + '<code>/*== H2 ==*/</code> 체크박스로 끄고 켜기<br>'
                     + '<code>/*-- H3 --*/</code> 하위 체크박스로 끄고 켜기<br>'
                     + '<code>/*---*/</code> 가장 작은 제목을 여기서 끝냄<br>'
-                    + '제목을 <code>[1] 이름</code>, <code>[A] 이름</code> 처럼 쓰면 같은 그룹에서 하나만 선택돼요.<br>'
+                    + (cfg().radioOn ? '제목을 <code>' + radioSample(cfg(), '1') + ' 이름</code>, <code>' + radioSample(cfg(), 'A') + ' 이름</code> 처럼 쓰면 같은 그룹에서 하나만 선택돼요.<br>' : '')
                     + '제목 형식은 Extensions → Check Box CSS 에서 수정할 수 있습니다.';
                 container.appendChild(hint);
                 return;
@@ -1290,12 +1333,6 @@ function radioGroups(items, prefix) {
         drawer.append(head, content);
         root.appendChild(drawer);
 
-        const help = el('div', 'csst-set-help');
-        help.innerHTML = '<b>Heading Format</b>: 비워 두면 기본 규칙을 사용합니다.<br>'
-           + '<code>/* ... */</code> 주석 형식과 H1, H2, H3 플레이스 홀더를 통해 직접 규칙을 설정할 수 있습니다.<br>'
-           + '<b>Stop Marker</b>: 제목을 끝내는 표시도 직접 정할 수 있어요. (기본 <code>/*---*/</code>)';
-        content.appendChild(help);
-
         // 얇은 선 박스 하나 안에 H1 / H2 / H3 를 수평선으로 나눠서 배치
         const group = el('fieldset', 'csst-set-group');
         group.appendChild(el('legend', 'csst-set-gtitle', 'Heading Format'));
@@ -1322,6 +1359,49 @@ function radioGroups(items, prefix) {
             ctl[lv] = { tpl, warn };
             group.appendChild(box);
         });
+        const headNote = el('div', 'csst-set-note');
+        headNote.innerHTML = '비워 두면 기본 규칙을 사용합니다.<br><code>/* ... */</code> 주석 형식과 H1, H2, H3 플레이스 홀더를 통해 직접 규칙을 설정할 수 있습니다.';
+        group.appendChild(headNote);
+
+        // 라디오 그룹 (Heading Format 바로 아래 박스): 사용 스위치 + 표시 형식
+        let radioOn = c.radioOn;
+        const radioGroup = el('fieldset', 'csst-set-group');
+        radioGroup.appendChild(el('legend', 'csst-set-gtitle', 'Radio Group'));
+        const radioBox = el('div', 'csst-set-sec');
+
+        const togRow = el('div', 'csst-tog-row');
+        const togText = el('div', 'csst-tog-text');
+        togText.append(
+            el('div', 'csst-tog-title', 'Enable Radio Group'),
+            el('div', 'csst-tog-desc', '켜면 표시가 이어진 이웃 항목들 중 하나만 선택돼요. 끄면 모두 일반 체크박스예요.'),
+        );
+        const tog = el('div', 'csst-tog');
+        tog.setAttribute('role', 'switch');
+        tog.tabIndex = 0;
+        togRow.append(togText, tog);
+
+        const rr = el('div', 'csst-set-row');
+        rr.appendChild(el('span', 'csst-set-lab', '표시 형식'));
+        const radioInput = el('input', 'text_pole csst-tpl');
+        radioInput.type = 'text';
+        radioInput.spellcheck = false;
+        radioInput.placeholder = RADIO_DEFAULT + '  (기본값)';
+        radioInput.value = c.radio;
+        rr.appendChild(radioInput);
+        const radioWarn = el('div', 'csst-set-warn');
+        const radioNote = el('div', 'csst-set-note');
+        radioNote.innerHTML = 'X로 표시된 자리에는 숫자 또는 알파벳이 들어갈 수 있습니다.<br> ex1) 표시형식 [X] → [1], [2] 또는 [A], [B] 형식으로 라디오 그룹을 생성 가능<br> ex2) 표시형식 (X) → (1), (2) 또는 (A), (B) 형식으로 라디오 그룹을 생성 가능';
+        radioBox.append(togRow, rr, radioWarn, radioNote);
+        
+        radioGroup.appendChild(radioBox);
+        content.appendChild(radioGroup);
+        const paintTog = () => {
+            tog.classList.toggle('csst-on', radioOn);
+            tog.setAttribute('aria-checked', radioOn ? 'true' : 'false');
+            rr.classList.toggle('csst-dim', !radioOn);
+            radioNote.classList.toggle('csst-dim', !radioOn);
+        };
+        paintTog();
 
         // 멈춤 표시 (별도 박스)
         const stopGroup = el('fieldset', 'csst-set-group');
@@ -1337,7 +1417,9 @@ function radioGroups(items, prefix) {
         sr.appendChild(stopInput);
         const stopWarn = el('div', 'csst-set-warn');
         const stopNote = el('div', 'csst-set-note', '지금 열려 있는 가장 작은 제목(H3 → H2 → H1)이 여기서 끝나요. 제목을 옮기면 같이 움직여요.');
-        stopBox.append(sr, stopWarn, stopNote);
+        const stopNote2 = el('div', 'csst-set-note');
+        stopNote2.innerHTML = '제목을 끝내는 표시도 직접 정할 수 있어요. (기본 <code>/*---*/</code>)';
+        stopBox.append(sr, stopWarn, stopNote2, stopNote);
         stopGroup.appendChild(stopBox);
         content.appendChild(stopGroup);
 
@@ -1384,12 +1466,16 @@ function radioGroups(items, prefix) {
             });
             const sc = checkStop(CFG.stop);
             const smsg = sc.ok === false ? '⚠ ' + sc.reason + ' → 지금은 기본값(' + STOP_SAMPLE + ')을 쓰고 있어요' : '';
+            const rc = checkRadio(CFG.radio);
+            const rmsg = rc.ok === false ? '⚠ ' + rc.reason + ' → 지금은 기본값(' + RADIO_DEFAULT + ')을 쓰고 있어요' : '';
+            radioWarn.textContent = rmsg;
+            radioWarn.style.display = rmsg ? '' : 'none';
             stopWarn.textContent = smsg;
             stopWarn.style.display = smsg ? '' : 'none';
         };
 
         const apply = () => {
-            const next = { tpl: {}, stop: stopInput.value, hiRes: hrOn };
+            const next = { tpl: {}, stop: stopInput.value, hiRes: hrOn, radio: radioInput.value, radioOn };
             [1, 2, 3].forEach((lv) => {
                 next.tpl[lv] = ctl[lv].tpl.value;
             });
@@ -1405,16 +1491,117 @@ function radioGroups(items, prefix) {
             ctl[lv].tpl.addEventListener('input', later);
         });
         stopInput.addEventListener('input', later);
+        radioInput.addEventListener('input', later);
+        const flipTog = () => {
+            radioOn = !radioOn;
+            paintTog();
+            apply();
+        };
+        tog.addEventListener('click', flipTog);
+        tog.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipTog(); }
+        });
         resetBtn.addEventListener('click', () => {
             [1, 2, 3].forEach((lv) => {
                 ctl[lv].tpl.value = DEFAULT_CFG.tpl[lv];
             });
             stopInput.value = DEFAULT_CFG.stop;
+            radioInput.value = DEFAULT_CFG.radio;
+            radioOn = DEFAULT_CFG.radioOn;
+            paintTog();
             apply();
         });
 
         showWarn();
         host.appendChild(root);
+        return true;
+    }
+
+    // ── UI Theme 이름 수정 버튼 (저장 버튼 오른쪽) ──
+    function initThemeRename() {
+        if (document.getElementById('csst-theme-rename')) return true;
+        const saveBtn = document.getElementById('ui-preset-save-button');
+        const sel = document.getElementById('themes');
+        if (!saveBtn || !sel) return false;
+
+        const btn = el('div', 'menu_button margin0 interactable');
+        btn.id = 'csst-theme-rename';
+        btn.title = 'Rename current theme';
+        btn.tabIndex = 0;
+        btn.appendChild(el('i', 'fa-solid fa-pencil'));
+        saveBtn.insertAdjacentElement('afterend', btn);
+
+        const hdr = () => {
+            const c = stContext();
+            return c && c.getRequestHeaders ? c.getRequestHeaders() : { 'Content-Type': 'application/json' };
+        };
+        const post = (url, body) => fetch(url, { method: 'POST', headers: hdr(), body: JSON.stringify(body) });
+        const say = (type, msg) => { if (window.toastr) window.toastr[type](msg); };
+
+        let busy = false;
+        btn.addEventListener('click', async () => {
+            if (busy) return;
+            const ctx = stContext();
+            const oldName = ctx && ctx.powerUserSettings && ctx.powerUserSettings.theme;
+            if (!oldName) { say('info', 'No theme selected.'); return; }
+            busy = true;
+            try {
+                let input;
+                if (ctx.callGenericPopup && ctx.POPUP_TYPE) {
+                    input = await ctx.callGenericPopup('Enter a new theme name:', ctx.POPUP_TYPE.INPUT, oldName);
+                } else {
+                    input = window.prompt('Enter a new theme name:', oldName);
+                }
+                if (!input || typeof input !== 'string') return;
+                let newName = input.trim();
+                try {
+                    const r = await post('/api/files/sanitize-filename', { fileName: newName });
+                    if (r.ok) newName = ((await r.json()).fileName || newName).trim();
+                } catch (e) { /* ignore */ }
+                if (!newName || newName === oldName) return;
+                if ([...sel.options].some((o) => o.value === newName)) {
+                    say('error', 'Theme with that name already exists');
+                    return;
+                }
+
+                // 서버에 저장돼 있는 원래 테마 파일 내용을 가져옴
+                const sr = await post('/api/settings/get', {});
+                if (!sr.ok) throw new Error('settings');
+                const data = await sr.json();
+                const list = Array.isArray(data.themes) ? data.themes : [];
+                const old = list.find((t) => t && t.name === oldName);
+                if (!old) throw new Error('theme not found');
+                const renamed = Object.assign({}, old, { name: newName });
+
+                // SillyTavern 내부 목록에도 등록되도록 '테마 가져오기' 입력을 통해 추가
+                const fileInput = document.getElementById('ui_preset_import_file');
+                if (!fileInput) throw new Error('import input');
+                const dt = new DataTransfer();
+                dt.items.add(new File([JSON.stringify(renamed)], newName + '.json', { type: 'application/json' }));
+                fileInput.files = dt.files;
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                for (let i = 0; i < 40 && ![...sel.options].some((o) => o.value === newName); i++) {
+                    await new Promise((r) => setTimeout(r, 50));
+                }
+                if (![...sel.options].some((o) => o.value === newName)) throw new Error('import failed');
+
+                // 옛 파일 삭제 + 목록에서 제거 + 새 이름 선택
+                const dr = await post('/api/themes/delete', { name: oldName });
+                if (!dr.ok) throw new Error('delete');
+                [...sel.options].forEach((o) => { if (o.value === oldName) o.remove(); });
+                sel.value = newName;
+                jQuery(sel).trigger('change');
+                say('success', 'Theme renamed.');
+            } catch (e) {
+                console.error('[Check Box CSS] theme rename failed', e);
+                say('error', 'Failed to rename theme. Check the console.');
+            } finally {
+                busy = false;
+            }
+        });
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
+        });
         return true;
     }
 
@@ -1424,7 +1611,8 @@ function radioGroups(items, prefix) {
         const timer = setInterval(() => {
             const a = init();
             const b = initSettingsUI();
-            if ((a && b) || ++tries > 60) clearInterval(timer);
+            const t = initThemeRename();
+            if ((a && b && t) || ++tries > 60) clearInterval(timer);
         }, 500);
     });
 })();

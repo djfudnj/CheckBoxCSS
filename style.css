@@ -183,3 +183,34 @@ textarea.csst-edit {
 /* 표시선: 일반 항목은 H1 밑줄 색 점선, 라디오 그룹은 Quote 60% 점선 (모양은 위 규칙 그대로) */
 .csst-block.csst-radio-block { border-left-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 60%, transparent) !important; }
 .csst-sub.csst-radio > .csst-row::before { border-left-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #4a9eff) 60%, transparent); }
+
+/* H1 접기 화살표: 제목 왼쪽의 > (펼치면 아래로 향함) */
+.csst-fold {
+    flex-shrink: 0; width: 1em; text-align: center;
+    font-size: 0.8em; opacity: 0.6;
+    transition: transform 0.15s ease;
+}
+.csst-drawer-head:hover .csst-fold { opacity: 1; }
+.csst-fold.csst-open { transform: rotate(90deg); }
+
+/* 라디오 그룹 사용 스위치 (왼쪽 확장의 Enable 스위치처럼) */
+.csst-tog-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0 8px; }
+.csst-tog-text { min-width: 0; }
+.csst-tog-title { font-weight: 700; margin-bottom: 2px; }
+.csst-tog-desc { font-size: 0.85em; opacity: 0.75; line-height: 1.4; }
+.csst-tog {
+    position: relative; flex-shrink: 0; width: 2.7em; height: 1.5em;
+    border-radius: 999px; cursor: pointer; box-sizing: border-box;
+    background: var(--grey30a, rgba(128, 128, 128, 0.35));
+    transition: background 0.15s ease;
+}
+.csst-tog::after {
+    content: ''; position: absolute; top: 0.2em; left: 0.2em;
+    width: 1.1em; height: 1.1em; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform 0.15s ease;
+}
+.csst-tog.csst-on { background: var(--SmartThemeQuoteColor, #4a9eff); }
+.csst-tog.csst-on::after { transform: translateX(1.2em); }
+.csst-tog:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor, #4a9eff); outline-offset: 2px; }
+.csst-set-row.csst-dim, .csst-set-note.csst-dim { opacity: 0.45; }
